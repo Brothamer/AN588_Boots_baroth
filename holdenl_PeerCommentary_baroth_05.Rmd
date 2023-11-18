@@ -1,0 +1,137 @@
+---
+title: "baroth_OriginalHomeworkCode_05"
+author: "Brooke Rothamer"
+date: "`r Sys.Date()`"
+output: 
+  prettydoc::html_pretty:
+    theme: cayman
+    toc: yes
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Peer Commentary:
+1. What you learned from running their Original Homework Code that helped improve your own code.
+- I loved the way that you included histograms of the coefficient distributions! I'm a visual learner, so I loved seeing a visual of your work. 
+2. What you did in your own code that might help to improve theirs.
+- I added a way to easily call the confidence intervals, rather than doing it manually. 
+3. What challenges, if any, you both faced in your code that could not be helped by comparison.
+- I think that we both used an incorrect bootstrapping method at first, so the SEs were incorrect. Or, we both tried to get the SEs incorrectly because mine looked the same as yours before I did a different method. If you use the website I listed below, I think it will get the correct SEs for the bootstrapping method. Overall, I am happy that this homework was short as I am sure you are happy about too!! 
+4. Whether the annotation/commenting on your peer’s Original Homework Code is readable and interpretable to you, and if not then how it could be improved.
+- Your code is readable and interpretable! Your descriptions are clear and the way you walk through everything you are doing is great. Great job. It knitted perfectly and looks great.
+
+# Homework 5: Bootstrapping Standard Errors and CIs for Linear Models.
+
+When we initially discussed the central limit theorem and confidence intervals, we showed how we could use bootstrapping to estimate standard errors and confidence intervals around certain parameter values, like the mean. Using bootstrapping, we could also do the same for estimating standard errors and CIs around regression parameters, such as β coefficients.
+
+Peer Commentary: 
+I like your description above! -Lillian
+
+## Linear Regression
+
+Using the “KamilarAndCooperData.csv” dataset, run a linear regression looking at log(HomeRange_km2) in relation to log(Body_mass_female_mean) and report your β coeffiecients (slope and intercept).
+
+Load in data.
+```{r data load in}
+data <- as.data.frame(read.csv("https://raw.githubusercontent.com/fuzzyatelin/fuzzyatelin.github.io/master/AN588_Fall23/KamilarAndCooperData.csv"))
+```
+
+Run linear regression model.
+```{r lm}
+model <- lm(log(data$HomeRange_km2)~log(data$Body_mass_female_mean))
+summary(model) #I did it the same way! -Lillian
+
+model_summary <- summary(model) # pulling out the coefficients this way to facilitate pulling out the standard error later
+model_summary$coefficients[,1]
+# You can also do this to find the confidence intervals! You just do ... 
+confint(model) # added this here, so you can easily get your conf intervals
+
+```
+* β0 = -9.44123
+* β1 = 1.03643
+
+## Bootstrapping
+
+Then, use bootstrapping to sample from your data 1000 times with replacement, each time fitting the same model and calculating the same coefficients. This generates a sampling distribution for each β coefficient.
+
+Bootstrapping code adapted from [Medium's Bootstrap regression in R](https://towardsdatascience.com/bootstrap-regression-in-r-98bfe4ff5007). { I used this website at first - Lillian}
+```{r}
+set.seed(42) #setting a seed will give the same sample every time the code is run
+
+sample_coef_beta0 <- NULL # dummy variable to hold 1000 simulated intercepts
+sample_coef_beta1 <- NULL # dummy variable to hold 1000 simulated slopes
+
+for (i in 1:1000) { # for i 1 through 1000,
+  sample_data = data[sample(1:nrow(data), nrow(data), replace = TRUE), ] #sample data of the same number of rows and columns is drawn from data
+  
+  bootstrap_model <- lm(log(sample_data$HomeRange_km2)~log(sample_data$Body_mass_female_mean)) #Run the regression on the sample_data
+  
+  
+  sample_coef_beta0 <- c(sample_coef_beta0, bootstrap_model$coefficients[1]) #pull the intercept from each model and saves them in a vector
+  
+  sample_coef_beta1 <- c(sample_coef_beta1, bootstrap_model$coefficients[2]) #pull the slope from each model and saves them in a vector
+}
+
+```
+```{r}
+head(sample_coef_beta0)
+head(sample_coef_beta1)
+```
+Peer Commentary: I like how you included historgrams below! I am a visual person, so I love things like this. - Lillian
+
+Quick look at the coefficient distributions.
+```{r}
+par(mfrow=c(1,2))
+hist(sample_coef_beta0)
+hist(sample_coef_beta1)
+```
+
+
+## SE and CI of Bootstrapped samples and Comparison
+
+Estimate the standard error for each of your β coefficients as the standard deviation of the sampling distribution from your bootstrap and determine the 95% CI for each of your β coefficients based on the appropriate quantiles from your sampling distribution.
+
+How does the former compare to the SE estimated from your entire dataset using the formula for standard error implemented in lm()?
+
+How does the latter compare to the 95% CI estimated from your entire dataset?
+
+### Standard Errors
+
+SEs from the bootstrap.
+```{r}
+sd(sample_coef_beta0)/sqrt(length((sample_coef_beta0))) # standard error of the intercepts
+sd(sample_coef_beta1)/sqrt(length((sample_coef_beta1))) # standard error of the slopes
+```
+SEs calculated from the entire dataset.
+```{r}
+model_summary$coefficients[,2]
+
+```
+
+The SEs from the entire dataset differ from the SEs from the bootstrap by a magnitude of 10, so I am concerned that I did something wrong. 
+
+Peer Commentary: 
+I did this way of bootstrapping at first, but realized that there must be something wrong with how I did it as you realized. This website helped me below to get one that made the SEs and CIS barely differ, so I think it may be the correct way to do it - take a look at the second example:  
+https://www.statology.org/bootstrapping-in-r/
+
+-Lillian
+
+### Confidence Intervals
+
+CIs from the bootstrap.
+```{r}
+quantile(sample_coef_beta0, c(0.025, 0.975)) #95% confidence interval of the intercepts
+quantile(sample_coef_beta1, c(0.025, 0.975)) #95% confidence interval of the slopes
+```
+
+CIs calculated from the entire dataset
+```{r}
+confint(model, '(Intercept)', level=0.95)
+confint(model, 'log(data$Body_mass_female_mean)', level=0.95)
+```
+
+The CIs calculated both ways are pretty similar. The CI of the intercepts are a bit tighter when calculated from the entire dataset than from the bootstrap. Both the upper and lower CI of the slope are greater from the bootstrap than from entire data set. The slope CI from the bootstrap is also a little tighter than the CI from the entire data.
+
+Peer Commentary: Yeah, the way you found your CIs appears to work -- nice job! See the website I linked to see if it can help at all with finding the SEs. It made it so my SEs were similar just as the CIs are! -Lillian
