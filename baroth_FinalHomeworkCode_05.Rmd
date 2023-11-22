@@ -1,0 +1,165 @@
+---
+title: "baroth_OriginalHomeworkCode_05"
+author: "Brooke Rothamer"
+date: "`r Sys.Date()`"
+output: 
+  prettydoc::html_pretty:
+    theme: cayman
+    toc: yes
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Homework 5: Bootstrapping Standard Errors and CIs for Linear Models.
+
+When we initially discussed the central limit theorem and confidence intervals, we showed how we could use bootstrapping to estimate standard errors and confidence intervals around certain parameter values, like the mean. Using bootstrapping, we could also do the same for estimating standard errors and CIs around regression parameters, such as β coefficients.
+
+## Linear Regression
+
+Using the “KamilarAndCooperData.csv” dataset, run a linear regression looking at log(HomeRange_km2) in relation to log(Body_mass_female_mean) and report your β coeffiecients (slope and intercept).
+
+Load in data.
+```{r data load in}
+Data <- as.data.frame(read.csv("https://raw.githubusercontent.com/fuzzyatelin/fuzzyatelin.github.io/master/AN588_Fall23/KamilarAndCooperData.csv"))
+```
+
+Run linear regression model.
+```{r lm}
+model <- lm(log(Data$HomeRange_km2)~log(Data$Body_mass_female_mean))
+summary(model)
+
+model_summary <- summary(model) # pulling out the coefficients this way to facilitate pulling out the standard error later
+model_summary$coefficients[,1]
+```
+* β0 = -9.44123
+* β1 = 1.03643
+
+## Bootstrapping
+
+Then, use bootstrapping to sample from your data 1000 times with replacement, each time fitting the same model and calculating the same coefficients. This generates a sampling distribution for each β coefficient.
+
+Originally, I used code adapted from [Medium's Bootstrap regression in R](https://towardsdatascience.com/bootstrap-regression-in-r-98bfe4ff5007). However, this method returns standard errors that look incorrect. 
+```{r}
+set.seed(42) #setting a seed will give the same sample every time the code is run
+
+sample_coef_beta0 <- NULL # dummy variable to hold 1000 simulated intercepts
+sample_coef_beta1 <- NULL # dummy variable to hold 1000 simulated slopes
+
+for (i in 1:1000) { # for i 1 through 1000,
+  sample_data = Data[sample(1:nrow(Data), nrow(Data), replace = TRUE), ] #sample data of the same number of rows and columns is drawn from data
+  
+  bootstrap_model <- lm(log(sample_data$HomeRange_km2)~log(sample_data$Body_mass_female_mean)) #Run the regression on the sample_data
+  
+  
+  sample_coef_beta0 <- c(sample_coef_beta0, bootstrap_model$coefficients[1]) #pull the intercept from each model and saves them in a vector
+  
+  sample_coef_beta1 <- c(sample_coef_beta1, bootstrap_model$coefficients[2]) #pull the slope from each model and saves them in a vector
+}
+
+```
+```{r}
+head(sample_coef_beta0)
+head(sample_coef_beta1)
+```
+```{r}
+par(mfrow=c(2,2))
+hist(sample_coef_beta0) #intercepts
+qqnorm(sample_coef_beta0)
+hist(sample_coef_beta1) #slopes
+qqnorm(sample_coef_beta1)
+```
+
+On Lillian's recommendation, I used the {boot} package instead, referencing [Statology's How to Perform Bootstrapping in R](https://www.statology.org/bootstrapping-in-r/). This method produced standard errors more comparable to the standard error from the overall data.
+
+```{r}
+set.seed(42) #setting a seed will give the same sample every time the code is run
+
+library(boot)
+
+#define function to calculate fitted regression coefficients in the boot() function below
+betas_function <- function(formula, data, indices) {
+  d <- data[indices,] #select a sample from the specified data (below)
+  fit <- lm(formula, data=d) #fit a linear regression model (based on the formula specified below)
+  return(coef(fit)) #return the coefficient estimates of the model as the statistics
+}
+
+#Perform a bootstrap
+bootstrap <- boot(data=Data, #using the dataframe called Data
+                  statistic=betas_function, #using statistics defined by betas_function above
+                  R=1000, #using 1000 samples
+                  formula=log(HomeRange_km2)~log(Body_mass_female_mean)) #based on this formula
+
+bootstrap #results of bootstrapping
+```
+
+Quick look at the distribution of the samples.
+```{r}
+plot(bootstrap, index=1) #intercepts
+plot(bootstrap, index=2) #slopes
+```
+
+## SE and CI of Bootstrapped samples and Comparison
+
+Estimate the standard error for each of your β coefficients as the standard deviation of the sampling distribution from your bootstrap and determine the 95% CI for each of your β coefficients based on the appropriate quantiles from your sampling distribution.
+How does the former compare to the SE estimated from your entire dataset using the formula for standard error implemented in lm()?
+How does the latter compare to the 95% CI estimated from your entire dataset?
+
+### Standard Errors
+
+SEs from the first bootstrapping method. These are the ones that appear incorrect.
+```{r}
+sd(sample_coef_beta0)/sqrt(length((sample_coef_beta0))) # standard error of the intercepts
+sd(sample_coef_beta1)/sqrt(length((sample_coef_beta1))) # standard error of the slopes
+```
+
+SEs from the {boot} bootstrapping method.
+```{r}
+bootstrap
+```
+
+SEs calculated from the entire dataset.
+```{r}
+model_summary$coefficients[,2]
+```
+
+The SE of the intercept is 0.584 from the bootstrap and 0.673 from the overall data which is fairly close. The SE of the slope is 0.0749 from the bootstrap and 0.0849 from the overall data which is also fairly closely. The SEs of both statistics differ between the bootstrap and the overall data by about the same amount. The bootstrap standard errors are about 87%-89% of the standard error from the overall data. The SEs calculated from the first bootstrapping method I tried are off by a power of ten, suggesting that that method is not doing what I think it should be or that I calculated the SEs wrong in that method.
+
+
+### Confidence Intervals
+
+CIs from the first bootstrapping method.
+```{r}
+quantile(sample_coef_beta0, c(0.025, 0.975)) #95% confidence interval of the intercepts
+quantile(sample_coef_beta1, c(0.025, 0.975)) #95% confidence interval of the slopes
+```
+
+CIs from the {boot} bootstrapping method.
+```{r}
+boot.ci(bootstrap, type="bca", index=1) #95% confidence interval of the intercepts
+boot.ci(bootstrap, type="bca", index=2) #95% confidence interval of the slopes
+```
+
+CIs calculated from the entire dataset
+```{r}
+confint(model, '(Intercept)', level=0.95) #95% confidence interval of the intercepts
+confint(model, 'log(Data$Body_mass_female_mean)', level=0.95) #95% confidence interval of the slopes
+```
+The intercept confidence intervals calculated from the first bootstrap (-10.731968, -8.415115), the second bootstrap (-10.697, -8.354), and the overall data (-10.77209, -8.110374) were very similar. 
+
+Similarly, the confidence intervals of the slope calculated by all three methods, (0.9011129, 1.2024555), (0.898, 1.185), and (0.8685707, 1.204292), were very similar. 
+
+# Reflection
+
+## Challenges
+1. In my original attempt, the standard errors I got from the bootstrap were off. Lillian had the same problem using that method and recommended I switched methods. Using the functions in the {boot} package did not give the same problem.
+2. I was having a hard time understanding what bootstrapping means. I think first attempting to do the bootstrap using the for loop sampling method better helped me to understand the steps of what goes into bootstrapping. If I had started with the boot() function, I would have gotten better outputs at first, but I would not have understood as well where the numbers come from.
+3. This was a short assignment, so I am having trouble thinking of a third challenge. I did struggle to find a straightforward way to call just the standard errors from the linear model, but that wasn't a major problem.
+
+## What I learned from my peers
+1. From reviewing Angelique's code and following Lillian's recommendation, I learned how to do a bootstrap using a different method (the functions in the {boot} package) than the method I used originally.
+2. It was informative to learn that Lillian and I faced the same problem from the original method we used to perform the bootstrap. I had thought that maybe I had calculated the SEs wrong, but the fact that we both faced that problem  suggests that maybe something about the sampling method was incorrect.
+
+## What I liked about my peer's code
+1. Angelique's method using the boot() and boot.ci() functions was really quick and gave a straightforward output that was easy to interpret.
